@@ -9,4 +9,4 @@ Apache 2.0
 
 See `LICENSE`.
 
-(c) 2018 Double_-oxygeN
+(c) 2018 Double-oxygeN
