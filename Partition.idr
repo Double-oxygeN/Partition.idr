@@ -57,17 +57,10 @@ mkIsPosSorted Nil =
 mkIsPosSorted (x :: Nil) =
   Just (IsPosSortedOne x)
 mkIsPosSorted (x :: (y :: ys)) =
-  case (mkIsPosGte x y) of
-    Just proofXGteY =>
-      case (mkIsPosSorted (y :: ys)) of
-        Just proofYYsIsSorted =>
-          Just (IsPosSortedMany x y ys proofXGteY proofYYsIsSorted)
-
-        Nothing =>
-          Nothing
-
-    Nothing =>
-      Nothing
+  do
+    proofXGteY <- mkIsPosGte x y
+    proofYYsIsSorted <- mkIsPosSorted (y :: ys)
+    Just (IsPosSortedMany x y ys proofXGteY proofYYsIsSorted)
 
 -- define partiton set Par
 
@@ -78,12 +71,9 @@ Par = DPair (List PosNat) IsPosSorted
 export
 mkPar : List PosNat -> Maybe Par
 mkPar xs =
-  case (mkIsPosSorted xs) of
-    Just proofXsIsSorted =>
-      Just (MkDPair xs proofXsIsSorted)
-
-    Nothing =>
-      Nothing
+  do
+    proofXsIsSorted <- mkIsPosSorted xs
+    Just (MkDPair xs proofXsIsSorted)
 
 -- define utility functions about Par
 
@@ -121,3 +111,4 @@ mkParN n l =
 
     Right proofLIsNotSizeN =>
       Nothing
+
