@@ -16,99 +16,105 @@
 
 module Partition
 
-import Data.PosNat
-import Data.So
-
 %default total
+%access export
 
--- define equality of PosNat
+-- define decreasing rule
+public export
+(>=) : Nat -> Nat -> Type
+(>=) = GTE
 
-Eq PosNat where
-  (x ** _) == (y ** _) = x == y
+public export
+data IsDecreasing : List Nat -> Type where
+  DecEmpty :
+    IsDecreasing Nil
 
--- prove X >= Y
+  DecSingle :
+    (a: Nat) -> a >= 1 ->
+    IsDecreasing (a :: Nil)
 
-IsPosGte : PosNat -> PosNat -> Type
-IsPosGte (x ** _) (y ** _) = So (x >= y)
+  DecMany :
+    (a1: Nat) -> (a2: Nat) -> (ax: List Nat) ->
+    a1 >= a2 -> IsDecreasing (a2 :: ax) ->
+    IsDecreasing (a1 :: a2 :: ax)
 
-mkIsPosGte : (x: PosNat) -> (y: PosNat) -> Maybe (IsPosGte x y)
-mkIsPosGte (xn ** _) (yn ** _) =
-  case (choose (xn >= yn)) of
-    Left  proofXGteY => Just proofXGteY
-    Right proofNotXGteY => Nothing
+-- some theorems
 
--- prove X is sorted 
+succDec : IsDecreasing (x :: xs) -> IsDecreasing ((S x) :: xs)
+succDec (DecSingle x proofXIsPositive) = DecSingle (S x) (lteSuccRight proofXIsPositive)
+succDec (DecMany x y ys proofXGteY proofYYsIsDec) = DecMany (S x) y ys (lteSuccRight proofXGteY) proofYYsIsDec
 
-data IsPosSorted : List PosNat -> Type where
-  IsPosSortedZero :
-    IsPosSorted Nil
+-- define partition
+namespace Partition
+  public export
+  data Par : Type where
+    MkPar : (ls: List Nat) -> IsDecreasing ls -> Par
 
-  IsPosSortedOne :
-    (x: PosNat) -> IsPosSorted (x :: Nil)
+  ParNil : Par
+  ParNil = MkPar Nil DecEmpty
 
-  IsPosSortedMany :
-    (x: PosNat) -> (y: PosNat) -> (ys: List PosNat) ->
-    (IsPosGte x y) -> (IsPosSorted (y :: ys)) ->
-    IsPosSorted (x :: (y :: ys))
+  -- partition utility functions
+  toList : Par -> List Nat
+  toList (MkPar ls _) = ls
 
-mkIsPosSorted : (xs: List PosNat) -> Maybe (IsPosSorted xs)
-mkIsPosSorted Nil =
-  Just IsPosSortedZero
-mkIsPosSorted (x :: Nil) =
-  Just (IsPosSortedOne x)
-mkIsPosSorted (x :: (y :: ys)) =
-  do
-    proofXGteY <- mkIsPosGte x y
-    proofYYsIsSorted <- mkIsPosSorted (y :: ys)
-    Just (IsPosSortedMany x y ys proofXGteY proofYYsIsSorted)
+  index : (n: Nat) -> (l: Par) -> {auto ok: InBounds n (toList l)} -> Nat
+  index n l = Prelude.List.index n (Partition.toList l)
 
--- define partiton set Par
+  length : Par -> Nat
+  length l = length $ toList l
 
-export
-Par : Type
-Par = DPair (List PosNat) IsPosSorted
+  multiplicity : Nat -> Par -> Nat
+  multiplicity e l = length $ elemIndices e (toList l)
 
-export
-mkPar : List PosNat -> Maybe Par
-mkPar xs =
-  do
-    proofXsIsSorted <- mkIsPosSorted xs
-    Just (MkDPair xs proofXsIsSorted)
+  tail : Par -> Par
+  tail (MkPar Nil _) = ParNil
+  tail (MkPar (x :: Nil) _) = ParNil
+  tail (MkPar (x :: y :: ys) (DecMany x y ys _ proofYYsIsDec)) = (MkPar (y :: ys) proofYYsIsDec)
 
--- define utility functions about Par
+  sizePar : Par -> Nat
+  sizePar (MkPar Nil _) = Z
+  sizePar (MkPar (x :: Nil) (DecSingle _ _)) = x
+  sizePar (MkPar (x :: y :: ys) (DecMany x y ys proofXGteY proofYYsIsDec)) =
+    x + sizePar (assert_smaller (MkPar (x :: y :: ys) (DecMany x y ys proofXGteY proofYYsIsDec)) (MkPar (y :: ys) proofYYsIsDec))
 
-export
-length : Par -> Nat
-length l = length $ fst l
+Show Par where
+  show l = "(" ++ (join "," (toList l)) ++ ")"
+  where
+    join : (Show a) => String -> List a -> String
+    join _ Nil = ""
+    join _ (x :: Nil) = show x
+    join s (x :: xs) = (show x) ++ s ++ (join s xs)
 
-export
-index : Nat -> Par -> Maybe PosNat
-index n l = index' n (fst l)
+-- define partition of size N
+public export
+data ParN : Nat -> Type where
+  MkParN : (l: Par) -> sizePar l = n -> ParN n
 
-export
-multiplicity : PosNat -> Par -> Nat
-multiplicity e l = length $ elemIndices e (fst l)
+-- partition with limit
+data ParUpper : Nat -> Type where
+  MkParUpper : (k: Nat) -> (ls: List Nat) -> IsDecreasing (k :: ls) -> ParUpper k
 
-export
-size : Par -> Nat
-size l = foldl (\a, b => a + (fst b)) Z (fst l)
+forgetUpper : ParUpper k -> Par
+forgetUpper (MkParUpper k Nil _) = ParNil
+forgetUpper (MkParUpper k _ (DecMany _ x xs _ proofXXsIsDec)) = MkPar (x :: xs) proofXXsIsDec
 
--- define partition set every size of whose element is just N
+parUpperKIsParUpperSuccK : ParUpper k -> ParUpper (S k)
+parUpperKIsParUpperSuccK (MkParUpper k ls proofKLsIsDec) =
+  MkParUpper (S k) ls (succDec proofKLsIsDec)
 
-IsSize : Nat -> Par -> Type
-IsSize n l = So (size l == n)
+parUpperCons : (k1: Nat) -> k1 >= k2 -> ParUpper k2 -> ParUpper k1
+parUpperCons k1 proofK1GteK2 (MkParUpper k2 ls proofK2LsIsDec) =
+  case proofK2LsIsDec of
+    DecSingle _ proofK2IsPos => MkParUpper k1 [k1] (DecMany k1 k1 [] lteRefl (DecSingle k1 (lteTransitive proofK2IsPos proofK1GteK2)))
+    DecMany _ y ys proofK2GteY proofYYsIsDec => MkParUpper k1 (k1 :: y :: ys) (DecMany k1 k1 (y :: ys) lteRefl (DecMany k1 y ys (lteTransitive proofK2GteY proofK1GteK2) proofYYsIsDec))
 
-export
-ParN : Nat -> Type
-ParN n = DPair Par (IsSize n)
+-- get all Par(N)
+naiveAllParNUpper : (k: Nat) -> Nat -> List (ParUpper k)
+naiveAllParNUpper Z _ = Nil
+naiveAllParNUpper (S k) Z = (MkParUpper (S k) Nil (DecSingle (S k) (LTESucc LTEZero))) :: Nil
+naiveAllParNUpper (S k) n with ((S k) <= n)
+  | False = parUpperKIsParUpperSuccK <$> naiveAllParNUpper k n
+  | True  = ((parUpperCons (S k) lteRefl) <$> naiveAllParNUpper (S k) (assert_smaller n (n `minus` (S k)))) ++ (parUpperKIsParUpperSuccK <$> (naiveAllParNUpper k n))
 
-export
-mkParN : (n: Nat) -> (l: Par) -> Maybe (ParN n)
-mkParN n l =
-  case (choose (size l == n)) of
-    Left proofLIsSizeN =>
-      Just (MkDPair l proofLIsSizeN)
-
-    Right proofLIsNotSizeN =>
-      Nothing
-
+naiveAllParN : Nat -> List Par
+naiveAllParN n = forgetUpper <$> naiveAllParNUpper n n

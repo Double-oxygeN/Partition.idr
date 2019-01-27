@@ -1,11 +1,12 @@
 import Partition
-import Data.PosNat
+import Data.String
 
 main : IO ()
 main = do
-  case (mkPar [(p 6), (p 5), (p 5), (p 2), (p 1), (p 1), (p 1)]) of
-    Just l =>
-      print $ size l
+  argv <- getArgs
 
-    Nothing =>
-      print "error"
+  n <- pure $ index' 1 argv >>= parsePositive
+  ls <- pure $ naiveAllParN <$> n
+
+  printLn ls
+  printLn $ length <$> ls
